@@ -1,0 +1,13 @@
+[prepare] Real data not found – generating synthetic Walmart-like data …
+[prepare] Synthetic data: 521,235 rows
+
+---
+r2:      0.999902
+mae:     152.84
+rmse:    339.05
+wmae:    197.48
+mape:    0.4698
+seconds: 686.2
+r2:      0.999902
+wmae:    197.48
+seconds: 686.2
