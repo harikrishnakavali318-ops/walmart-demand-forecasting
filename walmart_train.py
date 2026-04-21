@@ -8,6 +8,7 @@ import time, sys, json
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
+import xgboost as xgb
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
@@ -23,11 +24,23 @@ t0 = time.time()
 # ────────────────────────────────────────────────────────────────────────────
 df    = load_data()
 df    = build_features(df)
+
+# Exponential smoothing feature (alpha=0.3)
+alpha = 0.3
+df = df.sort_values(["Store","Dept","Date"]).reset_index(drop=True)
+df["EWM_sales"] = (
+    df.groupby(["Store","Dept"])["Weekly_Sales"]
+    .transform(lambda x: x.shift(1).ewm(alpha=alpha, adjust=False).mean())
+    .fillna(df.groupby(["Store","Dept"])["Weekly_Sales"].transform("mean"))
+)
+
 train, val = get_train_val(df)
 
-X_tr  = train[ALL_FEATURES].fillna(0)
+FEAT = ALL_FEATURES + ["EWM_sales"]
+
+X_tr  = train[FEAT].fillna(0)
 y_tr  = train[TARGET]
-X_val = val[ALL_FEATURES].fillna(0)
+X_val = val[FEAT].fillna(0)
 y_val = val[TARGET]
 is_hol = val["IsHoliday"].values
 
@@ -35,7 +48,8 @@ is_hol = val["IsHoliday"].values
 # MODEL  (edit this section in each experiment)
 # ────────────────────────────────────────────────────────────────────────────
 
-params = dict(
+# ── LightGBM ─────────────────────────────────────────────────────────────
+lgb_params = dict(
     objective       = "regression_l1",
     metric          = "mae",
     n_estimators    = 2000,
@@ -51,19 +65,36 @@ params = dict(
     n_jobs          = -1,
     verbose         = -1,
 )
-
-model = lgb.LGBMRegressor(**params)
-model.fit(
+lgb_model = lgb.LGBMRegressor(**lgb_params)
+lgb_model.fit(
     X_tr, y_tr,
     eval_set=[(X_val, y_val)],
-    callbacks=[
-        lgb.early_stopping(100, verbose=False),
-        lgb.log_evaluation(-1),
-    ],
+    callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(-1)],
 )
+pred_lgb = lgb_model.predict(X_val)
 
-pred = model.predict(X_val)
-pred = np.clip(pred, 0, None)
+# ── XGBoost ──────────────────────────────────────────────────────────────
+xgb_model = xgb.XGBRegressor(
+    n_estimators=1500, learning_rate=0.03, max_depth=9,
+    subsample=0.8, colsample_bytree=0.75,
+    reg_alpha=0.1, reg_lambda=0.5,
+    objective="reg:absoluteerror",
+    eval_metric="mae", tree_method="hist",
+    early_stopping_rounds=80, random_state=42,
+    n_jobs=-1, verbosity=0,
+)
+xgb_model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
+pred_xgb = xgb_model.predict(X_val)
+
+# ── Weighted blend (optimise weights on val) ──────────────────────────────
+best_r2, best_w = -np.inf, 0.5
+for w in np.arange(0.3, 0.9, 0.05):
+    p = w * pred_lgb + (1-w) * pred_xgb
+    r = float(np.corrcoef(y_val, p)[0,1]**2)
+    if r > best_r2:
+        best_r2, best_w = r, w
+
+pred = np.clip(best_w * pred_lgb + (1-best_w) * pred_xgb, 0, None)
 
 # ────────────────────────────────────────────────────────────────────────────
 # Evaluate & print summary

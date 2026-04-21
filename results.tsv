@@ -1,1 +1,4 @@
 commit	r2	wmae	status	description
+2f8b40b	0.999774	355.97	keep	baseline LightGBM num_leaves=255 all features
+2f8b40b	0.999765	363.06	discard	num_leaves=511 slower+worse
+2f8b40b	0.999673	424.82	discard	two-stage ridge residual overfit
