@@ -9,3 +9,5 @@ commit	r2	wmae	status	description
 1244b05	0.999895	202.47	keep	4-way blend LGB+LGB2+LGB3-L2+XGB
 25d2561	0.999902	201.11	keep	5-way blend with Huber-DART scipy weight opt
 25d2561	0.999901	201.99	discard	naive predictor+Huber-LGB4 too slow 19min
+54e7bd8	0.999902	197.48	keep	holiday-specific LGB sub-model WMAE↓
+54e7bd8	0.999901	200.31	discard	holiday-multiplier calibration slightly worse
