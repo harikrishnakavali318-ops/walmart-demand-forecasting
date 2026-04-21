@@ -125,19 +125,33 @@ lgb3_model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)],
     callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(-1)])
 pred_lgb3 = lgb3_model.predict(X_val)
 
-# ── LightGBM-4: Huber loss (robust to outliers) + Dart boosting ─────────
-lgb4_params = {**lgb_params, "objective": "huber", "alpha": 0.9,
-               "boosting_type": "dart", "drop_rate": 0.1,
-               "learning_rate": 0.05, "random_state": 99,
-               "n_estimators": 600, "num_leaves": 255}
-lgb4_model = lgb.LGBMRegressor(**lgb4_params)
-lgb4_model.fit(X_tr, y_tr)   # DART doesn't support early stopping
-pred_lgb4 = lgb4_model.predict(X_val)
+# ── LightGBM-4: Holiday-specific model ─────────────────────────────────
+# Trained only on holiday weeks; provides specialised holiday predictions
+hol_tr  = train[train["IsHoliday"] == 1]
+hol_val = val[val["IsHoliday"] == 1]
+
+if len(hol_tr) > 50:
+    X_hol_tr  = hol_tr[FEAT].fillna(0)
+    y_hol_tr  = hol_tr[TARGET]
+    X_hol_val = hol_val[FEAT].fillna(0)
+
+    lgb4_params = {**lgb_params, "n_estimators": 1000, "random_state": 77,
+                   "learning_rate": 0.04, "num_leaves": 127}
+    lgb4_model = lgb.LGBMRegressor(**lgb4_params)
+    lgb4_model.fit(X_hol_tr, y_hol_tr, callbacks=[lgb.log_evaluation(-1)])
+
+    pred_lgb4_full = np.zeros(len(X_val))
+    if len(hol_val) > 0:
+        pred_lgb4_full[val["IsHoliday"].values == 1] = lgb4_model.predict(X_hol_val)
+    # For non-holiday weeks use LGB1 prediction
+    pred_lgb4_full[val["IsHoliday"].values == 0] = pred_lgb[val["IsHoliday"].values == 0]
+else:
+    pred_lgb4_full = pred_lgb.copy()
 
 # ── Optimise 5-way blend (scipy minimize) ───────────────────────────────
 from scipy.optimize import minimize
 
-all_preds = np.stack([pred_lgb, pred_lgb2, pred_lgb3, pred_lgb4, pred_xgb], axis=1)
+all_preds = np.stack([pred_lgb, pred_lgb2, pred_lgb3, pred_lgb4_full, pred_xgb], axis=1)
 y_arr = y_val.values
 
 def neg_r2(w):
