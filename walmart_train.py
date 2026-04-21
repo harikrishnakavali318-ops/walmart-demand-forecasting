@@ -117,7 +117,7 @@ lgb2_model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)],
     callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(-1)])
 pred_lgb2 = lgb2_model.predict(X_val)
 
-# ── LightGBM-3: L2 objective (RMSE optimisation, different error geometry)
+# ── LightGBM-3: L2 objective ────────────────────────────────────────────
 lgb3_params = {**lgb_params, "objective": "regression_l2", "metric": "rmse",
                "learning_rate": 0.025, "random_state": 7, "num_leaves": 300}
 lgb3_model = lgb.LGBMRegressor(**lgb3_params)
@@ -125,21 +125,31 @@ lgb3_model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)],
     callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(-1)])
 pred_lgb3 = lgb3_model.predict(X_val)
 
-# ── Optimise 4-way blend weights (grid over simplex) ─────────────────────
-preds_list = [pred_lgb, pred_lgb2, pred_lgb3, pred_xgb]
-best_r2, best_w = -np.inf, [0.4, 0.25, 0.2, 0.15]
-for w1 in np.arange(0.25, 0.65, 0.05):
-    for w2 in np.arange(0.1, 0.4, 0.05):
-        for w3 in np.arange(0.05, 0.35, 0.05):
-            w4 = 1 - w1 - w2 - w3
-            if w4 <= 0: continue
-            p = w1*pred_lgb + w2*pred_lgb2 + w3*pred_lgb3 + w4*pred_xgb
-            r = float(r2_score(y_val, p))
-            if r > best_r2:
-                best_r2, best_w = r, [w1, w2, w3, w4]
+# ── LightGBM-4: Huber loss (robust to outliers) + Dart boosting ─────────
+lgb4_params = {**lgb_params, "objective": "huber", "alpha": 0.9,
+               "boosting_type": "dart", "drop_rate": 0.1,
+               "learning_rate": 0.05, "random_state": 99,
+               "n_estimators": 600, "num_leaves": 255}
+lgb4_model = lgb.LGBMRegressor(**lgb4_params)
+lgb4_model.fit(X_tr, y_tr)   # DART doesn't support early stopping
+pred_lgb4 = lgb4_model.predict(X_val)
 
-w1, w2, w3, w4 = best_w
-pred = np.clip(w1*pred_lgb + w2*pred_lgb2 + w3*pred_lgb3 + w4*pred_xgb, 0, None)
+# ── Optimise 5-way blend (scipy minimize) ───────────────────────────────
+from scipy.optimize import minimize
+
+all_preds = np.stack([pred_lgb, pred_lgb2, pred_lgb3, pred_lgb4, pred_xgb], axis=1)
+y_arr = y_val.values
+
+def neg_r2(w):
+    w = np.abs(w); w /= w.sum()
+    return -r2_score(y_arr, all_preds @ w)
+
+w0 = np.array([0.35, 0.2, 0.2, 0.1, 0.15])
+res = minimize(neg_r2, w0, method="Nelder-Mead",
+               options={"maxiter": 2000, "xatol": 1e-6})
+best_w = np.abs(res.x); best_w /= best_w.sum()
+
+pred = np.clip(all_preds @ best_w, 0, None)
 
 # ────────────────────────────────────────────────────────────────────────────
 # Evaluate & print summary
