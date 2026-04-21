@@ -3,3 +3,5 @@ commit	r2	wmae	status	description
 2f8b40b	0.999765	363.06	discard	num_leaves=511 slower+worse
 2f8b40b	0.999673	424.82	discard	two-stage ridge residual overfit
 9ba6201	0.999811	314.72	keep	LGB+XGB blend + EWM alpha=0.3 feature
+738d84e	0.999853	248.01	keep	3-way blend LGB+LGB2+XGB multi-EWM holiday-interactions
+738d84e	0.999846	255.61	discard	per-SD bias correction slight overfit

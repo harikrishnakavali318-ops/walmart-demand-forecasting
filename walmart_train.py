@@ -46,10 +46,18 @@ df["Sales_accel"] = df["Lag_1"].fillna(0) - df["Roll_4_mean"].fillna(0)
 # Log ratio
 df["log_lag1_vs_roll26"] = np.log1p(df["Lag_1"].fillna(0)) - np.log1p(df["Roll_26_mean"].fillna(0))
 
+# Polynomial & log transforms on key lags
+df["log_lag1"]   = np.log1p(df["Lag_1"].fillna(0))
+df["log_lag52"]  = np.log1p(df["Lag_52"].fillna(0))
+df["lag1_sq"]    = df["Lag_1"].fillna(0) ** 2 / 1e8   # scale down
+df["lag1_x_lag52"] = df["Lag_1"].fillna(0) * df["Lag_52"].fillna(0) / 1e8
+df["trend_ratio"]  = df["Roll_4_mean"].fillna(0) / (df["Roll_26_mean"].fillna(1).replace(0,1))
+
 train, val = get_train_val(df)
 
 EXTRA = ["EWM_1","EWM_3","EWM_6",
-         "hol_x_lag1","xmas_x_lag52","Sales_accel","log_lag1_vs_roll26"]
+         "hol_x_lag1","xmas_x_lag52","Sales_accel","log_lag1_vs_roll26",
+         "log_lag1","log_lag52","lag1_sq","lag1_x_lag52","trend_ratio"]
 FEAT = ALL_FEATURES + EXTRA
 
 X_tr  = train[FEAT].fillna(0)
@@ -64,20 +72,21 @@ is_hol = val["IsHoliday"].values
 
 # ── LightGBM ─────────────────────────────────────────────────────────────
 lgb_params = dict(
-    objective       = "regression_l1",
-    metric          = "mae",
-    n_estimators    = 2000,
-    learning_rate   = 0.03,
-    num_leaves      = 255,
-    max_depth       = -1,
-    min_child_samples = 10,
-    subsample       = 0.85,
-    colsample_bytree= 0.75,
-    reg_alpha       = 0.1,
-    reg_lambda      = 0.5,
-    random_state    = 42,
-    n_jobs          = -1,
-    verbose         = -1,
+    objective         = "regression_l1",
+    metric            = "mae",
+    n_estimators      = 2000,
+    learning_rate     = 0.025,
+    num_leaves        = 255,
+    max_depth         = -1,
+    min_child_samples = 8,
+    subsample         = 0.85,
+    subsample_freq    = 1,
+    colsample_bytree  = 0.75,
+    reg_alpha         = 0.05,
+    reg_lambda        = 0.3,
+    random_state      = 42,
+    n_jobs            = -1,
+    verbose           = -1,
 )
 lgb_model = lgb.LGBMRegressor(**lgb_params)
 lgb_model.fit(
