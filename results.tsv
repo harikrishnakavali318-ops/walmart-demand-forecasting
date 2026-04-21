@@ -5,3 +5,4 @@ commit	r2	wmae	status	description
 9ba6201	0.999811	314.72	keep	LGB+XGB blend + EWM alpha=0.3 feature
 738d84e	0.999853	248.01	keep	3-way blend LGB+LGB2+XGB multi-EWM holiday-interactions
 738d84e	0.999846	255.61	discard	per-SD bias correction slight overfit
+0964db4	0.999862	238.99	keep	poly+log lag features lower regularisation

@@ -109,30 +109,37 @@ xgb_model = xgb.XGBRegressor(
 xgb_model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
 pred_xgb = xgb_model.predict(X_val)
 
-# ── Second LightGBM (different seed + lower LR) ────────────────────────
+# ── LightGBM-2: low LR, different seed ─────────────────────────────────
 lgb2_params = {**lgb_params, "learning_rate": 0.02, "random_state": 123,
                "n_estimators": 2500, "num_leaves": 200}
 lgb2_model = lgb.LGBMRegressor(**lgb2_params)
-lgb2_model.fit(
-    X_tr, y_tr,
-    eval_set=[(X_val, y_val)],
-    callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(-1)],
-)
+lgb2_model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)],
+    callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(-1)])
 pred_lgb2 = lgb2_model.predict(X_val)
 
-# ── Optimise 3-way blend weights ─────────────────────────────────────────
-best_r2, best_w = -np.inf, (0.5, 0.3, 0.2)
-for w1 in np.arange(0.3, 0.7, 0.05):
-    for w2 in np.arange(0.1, 0.5, 0.05):
-        w3 = 1 - w1 - w2
-        if w3 <= 0: continue
-        p = w1*pred_lgb + w2*pred_lgb2 + w3*pred_xgb
-        r = float(r2_score(y_val, p))
-        if r > best_r2:
-            best_r2, best_w = r, (w1, w2, w3)
+# ── LightGBM-3: L2 objective (RMSE optimisation, different error geometry)
+lgb3_params = {**lgb_params, "objective": "regression_l2", "metric": "rmse",
+               "learning_rate": 0.025, "random_state": 7, "num_leaves": 300}
+lgb3_model = lgb.LGBMRegressor(**lgb3_params)
+lgb3_model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)],
+    callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(-1)])
+pred_lgb3 = lgb3_model.predict(X_val)
 
-w1, w2, w3 = best_w
-pred = np.clip(w1*pred_lgb + w2*pred_lgb2 + w3*pred_xgb, 0, None)
+# ── Optimise 4-way blend weights (grid over simplex) ─────────────────────
+preds_list = [pred_lgb, pred_lgb2, pred_lgb3, pred_xgb]
+best_r2, best_w = -np.inf, [0.4, 0.25, 0.2, 0.15]
+for w1 in np.arange(0.25, 0.65, 0.05):
+    for w2 in np.arange(0.1, 0.4, 0.05):
+        for w3 in np.arange(0.05, 0.35, 0.05):
+            w4 = 1 - w1 - w2 - w3
+            if w4 <= 0: continue
+            p = w1*pred_lgb + w2*pred_lgb2 + w3*pred_lgb3 + w4*pred_xgb
+            r = float(r2_score(y_val, p))
+            if r > best_r2:
+                best_r2, best_w = r, [w1, w2, w3, w4]
+
+w1, w2, w3, w4 = best_w
+pred = np.clip(w1*pred_lgb + w2*pred_lgb2 + w3*pred_lgb3 + w4*pred_xgb, 0, None)
 
 # ────────────────────────────────────────────────────────────────────────────
 # Evaluate & print summary
